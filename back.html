@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<link rel="icon" href="data:;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==">
+<head>
+    <meta charset="UTF-8">
+    <title>FFmpeg 视频修复与转码</title>
+    <script src="./lib/ffmpeg.min.js"></script>
+    <style>
+        body { font-family: system-ui, sans-serif; background: #f4f4f9; padding: 20px; display: flex; justify-content: center; }
+        .card { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 550px; }
+        .file-box { border: 2px dashed #007bff; padding: 20px; text-align: center; margin: 15px 0; cursor: pointer; transition: 0.3s; }
+        .file-box:hover { background: #eef6ff; }
+        .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        button { padding: 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        .btn-copy { background: #28a745; color: white; }
+        .btn-aac { background: #007bff; color: white; }
+        button:disabled { background: #ccc !important; cursor: not-allowed; }
+        #status { font-weight: bold; margin-bottom: 10px; color: #333; }
+        #log { margin-top: 15px; font-size: 11px; color: #444; max-height: 150px; overflow-y: auto; background: #f0f0f0; padding: 10px; border-radius: 4px; border: 1px solid #ddd; font-family: monospace; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h3>视频修复与转码工具</h3>
+    <div id="status">⏳ 正在加载 WebAssembly 引擎...</div>
+    
+    <div class="file-box" onclick="document.getElementById('fileInput').click()">
+        <input type="file" id="fileInput" style="display: none">
+        <span id="fileLabel">点击选择视频文件 (TS, XWS, MP4，TS，MOV，FLV...)</span>
+    </div>
+    
+    <div class="btn-group">
+        <button id="copyBtn" class="btn-copy" disabled title="仅在音视频编码均符合MP4规范时使用">极速复制 (Copy)</button>
+        <button id="aacBtn" class="btn-aac" disabled title="当视频无法播放或提示音频不支持时使用">修复音频 (转码 AAC)</button>
+    </div>
+    
+    <div id="log">等待操作...</div>
+</div>
+
+<script>
+    const { createFFmpeg } = FFmpeg;
+    const ffmpeg = createFFmpeg({ 
+        log: true,
+        corePath: new URL('./lib/ffmpeg-core.js', document.location).href,
+    });
+
+    const statusEl = document.getElementById('status');
+    const logEl = document.getElementById('log');
+    const fileInput = document.getElementById('fileInput');
+    const copyBtn = document.getElementById('copyBtn');
+    const aacBtn = document.getElementById('aacBtn');
+
+    function doLog(msg) {
+        const div = document.createElement('div');
+        div.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+        logEl.prepend(div);
+    }
+
+    // 加载引擎
+    async function init() {
+        try {
+            await ffmpeg.load();
+            statusEl.innerText = "✅ WASM 引擎就绪";
+            copyBtn.disabled = false;
+            aacBtn.disabled = false;
+            doLog("引擎加载成功。");
+        } catch (e) {
+            statusEl.innerText = "❌ 加载失败，请检查跨域隔离头配置";
+            doLog("错误: " + e.message);
+        }
+    }
+
+    fileInput.onchange = (e) => {
+        if (e.target.files[0]) document.getElementById('fileLabel').innerText = e.target.files[0].name;
+    };
+
+    // 核心处理函数
+    async function processVideo(mode) {
+        const file = fileInput.files[0];
+        if (!file) return alert("请先选择文件");
+
+        copyBtn.disabled = true;
+        aacBtn.disabled = true;
+        statusEl.innerText = `🔄 正在执行 ${mode === 'copy' ? '极速复制' : '音频转码'}...`;
+        
+        try {
+            const arrayBuffer = await file.arrayBuffer();
+            let data = new Uint8Array(arrayBuffer);
+
+            const inputName = 'input_tmp';
+            const outputName = 'output_fixed.mp4';
+
+            ffmpeg.FS('writeFile', inputName, data);
+            doLog("文件已载入虚拟内存。");
+
+            if (mode === 'copy') {
+                // 模式 1：全流复制
+                await ffmpeg.run('-i', inputName, '-c', 'copy', outputName);
+            } else {
+                // 模式 2：视频复制 + 音频转 AAC
+                doLog("正在转码音频为 AAC，请稍候...");
+                await ffmpeg.run(
+                    '-i', inputName, 
+                    '-c:v', 'copy', 
+                    '-c:a', 'aac', 
+                    '-b:a', '128k', 
+                    '-strict', 'experimental', 
+                    outputName
+                );
+            }
+
+            const outData = ffmpeg.FS('readFile', outputName);
+            const url = URL.createObjectURL(new Blob([outData.buffer], { type: 'video/mp4' }));
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${file.name.split('.')[0]}_${mode}.mp4`;
+            a.click();
+
+            doLog(`处理成功！已生成 ${mode} 版本并下载。`);
+            statusEl.innerText = "✅ 处理完成";
+            
+            // 清理
+            ffmpeg.FS('unlink', inputName);
+            ffmpeg.FS('unlink', outputName);
+        } catch (err) {
+            doLog("运行失败，详见控制台。");
+            statusEl.innerText = "❌ 处理过程中出错";
+            console.error(err);
+        } finally {
+            copyBtn.disabled = false;
+            aacBtn.disabled = false;
+        }
+    }
+
+    copyBtn.onclick = () => processVideo('copy');
+    aacBtn.onclick = () => processVideo('aac');
+
+    init();
+</script>
+</body>
+</html>

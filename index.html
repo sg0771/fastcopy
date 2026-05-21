@@ -4,7 +4,12 @@
 <head>
     <meta charset="UTF-8">
     <title>FFmpeg 视频修复与转码</title>
-    <script src="./lib/ffmpeg.min.js"></script>
+      <!-- 必加：解决 COEP 跨域拦截 -->
+  <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin">
+  <meta http-equiv="Cross-Origin-Embedder-Policy" content="require-corp">
+
+  <!-- jsDelivr 国内加速（比 unpkg 快太多） -->
+  <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
     <style>
         body { font-family: system-ui, sans-serif; background: #f4f4f9; padding: 20px; display: flex; justify-content: center; }
         .card { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 550px; }
@@ -42,7 +47,7 @@
     const { createFFmpeg } = FFmpeg;
     const ffmpeg = createFFmpeg({ 
         log: true,
-        corePath: new URL('./lib/ffmpeg-core.js', document.location).href,
+        corePath: 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js'
     });
 
     const statusEl = document.getElementById('status');
