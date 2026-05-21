@@ -42,7 +42,7 @@
     const { createFFmpeg } = FFmpeg;
     const ffmpeg = createFFmpeg({ 
         log: true,
-        corePath: "/lib/ffmpeg-core.js",
+        corePath: new URL('./lib/ffmpeg-core.js', document.location).href,
     });
 
     const statusEl = document.getElementById('status');
